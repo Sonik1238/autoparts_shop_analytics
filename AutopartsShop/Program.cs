@@ -1,5 +1,5 @@
 using AutoPartsStore.Repositories;
-using Oracle.ManagedDataAccess.Client;
+using Npgsql;
 using System.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,11 +11,9 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-OracleConfiguration.BindByName = true;
+var connectionString = builder.Configuration.GetConnectionString("PostgresConnection");
+builder.Services.AddTransient<IDbConnection>(sp => new NpgsqlConnection(connectionString));
 
-var connectionString = builder.Configuration.GetConnectionString("OracleDbConnection");
-
-builder.Services.AddTransient<IDbConnection>(sp => new OracleConnection(connectionString));
 builder.Services.AddScoped<AnalyticsRepository>();
 
 builder.Services.AddCors(options =>

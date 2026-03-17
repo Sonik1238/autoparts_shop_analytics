@@ -18,29 +18,18 @@ namespace AutoPartsStore.Repositories
         public async Task<IEnumerable<SupplierResultDto>> GetSuppliersByCriteriaAsync(string category, string productName, int minVolume, DateTime startDate, DateTime endDate)
         {
             var sql = @"
-                SELECT 
-                    s.id AS Id, 
-                    s.name AS Name, 
-                    s.category AS Category, 
-                    s.country || ' (Контракт: ' || s.contract_number || ')' AS ContactInfo
+                SELECT s.id AS Id, s.name AS Name, s.category AS Category, s.country || ' (Контракт: ' || s.contract_number || ')' AS ContactInfo
                 FROM suppliers s
                 JOIN supplier_offers so ON s.id = so.supplier_id
                 JOIN products p ON so.product_id = p.id
-                WHERE s.category LIKE '%' || :Category || '%' 
-                  AND p.name LIKE '%' || :ProductName || '%'
+                WHERE s.category ILIKE '%' || @Category || '%' AND p.name ILIKE '%' || @ProductName || '%'
                 UNION
-                SELECT 
-                    s.id AS Id, 
-                    s.name AS Name, 
-                    s.category AS Category, 
-                    s.country || ' (Контракт: ' || s.contract_number || ')' AS ContactInfo
+                SELECT s.id AS Id, s.name AS Name, s.category AS Category, s.country || ' (Контракт: ' || s.contract_number || ')' AS ContactInfo
                 FROM suppliers s
                 JOIN purchase_orders po ON s.id = po.supplier_id
                 JOIN products p ON po.product_id = p.id
-                WHERE s.category LIKE '%' || :Category || '%' 
-                  AND p.name LIKE '%' || :ProductName || '%' 
-                  AND po.quantity >= :MinVolume 
-                  AND po.order_date BETWEEN :StartDate AND :EndDate";
+                WHERE s.category ILIKE '%' || @Category || '%' AND p.name ILIKE '%' || @ProductName || '%' 
+                  AND po.quantity >= @MinVolume AND po.order_date BETWEEN @StartDate AND @EndDate";
 
             return await _db.QueryAsync<SupplierResultDto>(sql, new
             {
@@ -63,7 +52,7 @@ namespace AutoPartsStore.Repositories
                 FROM products p
                 JOIN supplier_offers so ON p.id = so.product_id
                 JOIN suppliers s ON so.supplier_id = s.id
-                WHERE p.name LIKE '%' || :ProductName || '%'";
+                WHERE p.name LIKE '%' || @ProductName || '%'";
 
             return await _db.QueryAsync<SupplyInfoDto>(sql, new { ProductName = productName });
         }
@@ -72,15 +61,14 @@ namespace AutoPartsStore.Repositories
         public async Task<IEnumerable<CustomerStatDto>> GetCustomersByProductAsync(string productName, DateTime startDate, DateTime endDate, int minVolume)
         {
             var sql = @"
-                SELECT 
-                    DENSE_RANK() OVER (ORDER BY s.customer_name) AS CustomerId, -- Генеруємо ID для React
-                    s.customer_name AS CustomerName, 
-                    SUM(s.quantity) AS PurchaseVolume, 
-                    SUM(s.quantity * s.sale_price) AS TotalSpent
+                SELECT DENSE_RANK() OVER (ORDER BY s.customer_name)::int AS CustomerId, 
+                       s.customer_name AS CustomerName, 
+                       SUM(s.quantity)::int AS PurchaseVolume, 
+                       SUM(s.quantity * s.sale_price) AS TotalSpent
                 FROM sales s
                 JOIN products p ON s.product_id = p.id
-                WHERE p.name LIKE '%' || :ProductName || '%' -- Додано LIKE для зручнішого пошуку
-                  AND (s.sale_date BETWEEN :StartDate AND :EndDate OR s.quantity >= :MinVolume)
+                WHERE p.name ILIKE '%' || @ProductName || '%'
+                  AND (s.sale_date BETWEEN @StartDate AND @EndDate OR s.quantity >= @MinVolume)
                 GROUP BY s.customer_name";
 
             return await _db.QueryAsync<CustomerStatDto>(sql, new
@@ -163,7 +151,7 @@ namespace AutoPartsStore.Repositories
 
             // 1. Отримуємо ім'я постачальника
             result.SupplierName = await _db.QueryFirstOrDefaultAsync<string>(
-                "SELECT name FROM suppliers WHERE id = :SupplierId",
+                "SELECT name FROM suppliers WHERE id = @SupplierId",
                 new { SupplierId = supplierId }) ?? "Невідомий";
 
             // 2. Рахуємо загальний оборот та прибуток магазину
@@ -178,7 +166,7 @@ namespace AutoPartsStore.Repositories
                     FROM supplier_offers 
                     GROUP BY product_id
                 ) so_avg ON s.product_id = so_avg.product_id
-                WHERE s.sale_date BETWEEN :StartDate AND :EndDate";
+                WHERE s.sale_date BETWEEN @StartDate AND @EndDate";
 
             // Використовуємо наш DTO для мапінгу результатів
             var totals = await _db.QueryFirstOrDefaultAsync<SupplierShareDto>(totalSql, new { StartDate = startDate, EndDate = endDate });
@@ -196,8 +184,8 @@ namespace AutoPartsStore.Repositories
                     NVL(SUM(s.quantity * s.sale_price), 0) AS ShareMoney
                 FROM sales s
                 JOIN supplier_offers so ON s.product_id = so.product_id
-                WHERE so.supplier_id = :SupplierId 
-                  AND s.sale_date BETWEEN :StartDate AND :EndDate";
+                WHERE so.supplier_id = @SupplierId 
+                  AND s.sale_date BETWEEN @StartDate AND @EndDate";
 
             var supStats = await _db.QueryFirstOrDefaultAsync<SupplierShareDto>(supplierSql, new { SupplierId = supplierId, StartDate = startDate, EndDate = endDate });
 
